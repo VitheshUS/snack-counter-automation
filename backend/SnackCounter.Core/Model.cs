@@ -44,8 +44,13 @@ public class SnackDb(DbContextOptions<SnackDb> options) : DbContext(options)
     public DbSet<RefillAssignment> RefillAssignments => Set<RefillAssignment>();
     public DbSet<MonthlyBudget> MonthlyBudgets => Set<MonthlyBudget>();
     public DbSet<PurchaseCommitment> PurchaseCommitments => Set<PurchaseCommitment>();
+    public DbSet<ReimbursementClaim> ReimbursementClaims => Set<ReimbursementClaim>();
+    public DbSet<MockHrClaim> MockHrClaims => Set<MockHrClaim>();
+    public DbSet<Contribution> Contributions => Set<Contribution>();
+    public DbSet<ReportingRate> ReportingRates => Set<ReportingRate>();
     protected override void OnModelCreating(ModelBuilder m)
     {
+        Phase2BSchema.Configure(m);
         m.Entity<MonthlyBudget>().HasKey(b => new { b.OfficeId, b.Month });
         m.Entity<MonthlyBudget>().HasOne<Office>().WithMany().HasForeignKey(b => b.OfficeId);
         m.Entity<PurchaseCommitment>().HasOne<MonthlyBudget>().WithMany().HasForeignKey(p => new { p.OfficeId, p.Month });
@@ -87,6 +92,7 @@ public class SnackDb(DbContextOptions<SnackDb> options) : DbContext(options)
             """);
         await Database.ExecuteSqlRawAsync("DROP INDEX IF EXISTS IX_RefillAssignments_RefillRequestId_EmployeeId");
         await Database.ExecuteSqlRawAsync("CREATE UNIQUE INDEX IX_RefillAssignments_RefillRequestId_EmployeeId ON RefillAssignments (RefillRequestId, EmployeeId) WHERE State IN (0, 3, 6)");
+        await Phase2BSchema.Upgrade(this);
         await tx.CommitAsync();
     }
 }

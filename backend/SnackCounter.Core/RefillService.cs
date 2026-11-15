@@ -130,6 +130,7 @@ public class RefillService(SnackDb db, TimeProvider clock, IChat chat, Invitatio
                 .SetProperty(r => r.Outcome, next == RefillState.Completed ? action : null)) != 1) return false;
         await attempts.ExecuteUpdateAsync(s => s.SetProperty(a => a.State, attemptNext)
             .SetProperty(a => a.EndedAt, now));
+        if (action == "unnecessary") await Contributions.Award(db, requestId, employeeId, "Inspection", now);
         await tx.CommitAsync();
         return true;
     }

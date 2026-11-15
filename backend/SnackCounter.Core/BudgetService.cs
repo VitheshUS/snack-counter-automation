@@ -129,6 +129,8 @@ public class BudgetService(SnackDb db, TimeProvider clock, BudgetOptions options
         await db.RefillAssignments.Where(a => a.Id == purchase.RefillAssignmentId).ExecuteUpdateAsync(s =>
             s.SetProperty(a => a.State, cancel ? AttemptState.Released : AttemptState.Completed).SetProperty(a => a.EndedAt, now));
         await db.SaveChangesAsync();
+        if (!cancel)
+            await Contributions.Award(db, requestId, employeeId, actualMinor > 0 ? "Refill" : "Inspection", now);
         await tx.CommitAsync();
         return new(true, RequiresHrReview: purchase.RequiresHrReview);
     }

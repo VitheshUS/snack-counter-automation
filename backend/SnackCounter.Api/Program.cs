@@ -22,6 +22,14 @@ foreach (var policy in budgets.Offices.Values)
 builder.Services.AddSingleton(budgets);
 builder.Services.AddScoped<BudgetService>();
 builder.Services.AddScoped<RefillService>();
+var reporting = builder.Configuration.GetSection("Reporting").Get<ReportingOptions>() ?? new();
+if (reporting.InrToNokNumerator <= 0 || reporting.InrToNokNumerator > 1_000_000 || reporting.InrToNokDenominator <= 0 || reporting.InrToNokDenominator > 1_000_000)
+    throw new InvalidOperationException("Simulated exchange rate components must be between 1 and 1000000.");
+builder.Services.AddSingleton(reporting);
+builder.Services.AddScoped<SimulatedHr>();
+builder.Services.AddScoped<IHrAdapter>(s => s.GetRequiredService<SimulatedHr>());
+builder.Services.AddScoped<ReimbursementService>();
+builder.Services.AddScoped<ReportingService>();
 builder.Services.AddHostedService<ExpirationWorker>();
 var app = builder.Build();
 using (var scope = app.Services.CreateScope())
@@ -31,7 +39,11 @@ using (var scope = app.Services.CreateScope())
 // Public request projections deliberately omit reporter and assignee identities.
 app.MapGet("/", () => new { application = "Snack Counter", warning = "Demo: identities are simulated and trusted; no authentication.",
     endpoints = new[] { "GET /offices", "GET /offices/{officeId}/budget", "GET /demo/employees", "GET /refills", "POST /offices/{officeId}/refills",
-        "POST /refills/{id}/invite", "GET /demo/employees/{employeeId}/invitations", "POST /refills/{id}/{action}" },
+        "POST /refills/{id}/invite", "GET /demo/employees/{employeeId}/invitations", "POST /refills/{id}/{action}",
+        "GET /demo/employees/{employeeId}/purchases", "POST /purchases/{purchaseId}/reimbursement",
+        "GET /reimbursements/{id}?employeeId=...", "POST /reimbursements/{id}/submit", "POST /reimbursements/{id}/reconcile",
+        "POST /demo/hr/reimbursements/{id}/decision", "GET /reports/monthly/{month}", "GET /reports/monthly/{month}/consolidated",
+        "GET /demo/hr/contributions", "GET /demo/hr/contributions/leaderboard" },
     actions = new[] { "accept", "offer", "decline", "release", "unnecessary", "purchase", "complete", "cancel-purchase" } });
 app.MapGet("/offices/{officeId:int}/budget", async (int officeId, BudgetService service) =>
     await service.GetBalance(officeId) is { } balance ? Results.Ok(balance) : Results.NotFound());
@@ -86,6 +98,7 @@ app.MapPost("/refills/{id:int}/{action}", async (int id, string action, Identity
     };
     return ok ? Results.NoContent() : Results.Conflict(new { error = "Action unavailable, invitation expired, or employee is not the reservation owner." });
 });
+app.MapPhase2B();
 app.Run();
 
 public record Identity(int EmployeeId, long? EstimatedAmountMinor = null, long? ActualAmountMinor = null, string? Currency = null);

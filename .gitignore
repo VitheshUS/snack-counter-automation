@@ -20,3 +20,9 @@ appsettings.Development.json
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+
+# Private demo data (receipt references and employee/claim records)
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/private-receipts/
