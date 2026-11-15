@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend build and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      # setup-dotnet's built-in cache requires packages.lock.json files,
+      # which this repository does not currently have.
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-net10-${{ hashFiles('**/*.csproj', '**/Directory.Packages.props', '**/Directory.Build.props', '**/Directory.Build.targets', '**/NuGet.Config', '**/nuget.config', '**/packages.lock.json', 'global.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-net10-
+
+      - name: Restore dependencies
+        run: dotnet restore SnackCounter.slnx
+
+      - name: Build Release
+        run: dotnet build SnackCounter.slnx --configuration Release --no-restore
+
+      - name: Run xUnit tests
+        run: dotnet test SnackCounter.slnx --configuration Release --no-build --no-restore
