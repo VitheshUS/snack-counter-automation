@@ -16,7 +16,7 @@ public class InvitationOptions
     public TimeSpan NotificationCooldown { get; set; } = TimeSpan.FromHours(1);
     public int MaxInvitationAttempts { get; set; } = 6; // Total notifications per refill, across all volunteers.
 }
-public class RefillService(SnackDb db, TimeProvider clock, IChat chat, InvitationOptions? options = null)
+public class RefillService(SnackDb db, TimeProvider clock, IChat chat, InvitationOptions? options = null, BudgetOptions? budgets = null)
 {
     private readonly InvitationOptions policy = options ?? new();
     private long Now => clock.GetUtcNow().UtcTicks;
@@ -106,33 +106,30 @@ public class RefillService(SnackDb db, TimeProvider clock, IChat chat, Invitatio
         if (declined) await Invite(requestId);
         return declined;
     }
-    public async Task<bool> Transition(int requestId, int employeeId, string action)
+    public async Task<bool> Transition(int requestId, int employeeId, string action, long? amountMinor = null, string? currency = null)
     {
         await Sweep();
+        // All entry points use the same financial transaction; no legacy bypass.
+        var financial = new BudgetService(db, clock, budgets ?? new());
+        if (action == "purchase") return amountMinor.HasValue && currency != null &&
+            (await financial.Authorize(requestId, employeeId, amountMinor.Value, currency)).Success;
+        if (action is "complete" or "cancel-purchase") return amountMinor.HasValue && currency != null &&
+            (await financial.Resolve(requestId, employeeId, amountMinor.Value, currency, action == "cancel-purchase")).Success;
         using var tx = await db.Database.BeginTransactionAsync();
         var now = Now;
         var request = await db.RefillRequests.AsNoTracking().SingleOrDefaultAsync(r => r.Id == requestId);
-        var purchasing = request?.State is RefillState.Purchasing or RefillState.NeedsReview;
-        if (request == null || (request.State != RefillState.Reserved && !purchasing)) return false;
-        if (purchasing && action != "complete") return false;
-        if (action is not ("release" or "unnecessary" or "purchase" or "complete")) return false;
-        if (!purchasing && action == "complete") return false;
-        var expected = purchasing ? AttemptState.Purchasing : AttemptState.Reserved;
-        var attempts = db.RefillAssignments.Where(a => a.RefillRequestId == requestId && a.EmployeeId == employeeId && a.State == expected);
-        var next = action switch { "release" => RefillState.Open, "purchase" => RefillState.Purchasing, _ => RefillState.Completed };
-        var attemptNext = action switch { "release" => AttemptState.Released, "purchase" => AttemptState.Purchasing, _ => AttemptState.Completed };
+        if (request?.State != RefillState.Reserved || action is not ("release" or "unnecessary")) return false;
+        var attempts = db.RefillAssignments.Where(a => a.RefillRequestId == requestId && a.EmployeeId == employeeId && a.State == AttemptState.Reserved);
+        var next = action == "release" ? RefillState.Open : RefillState.Completed;
+        var attemptNext = action == "release" ? AttemptState.Released : AttemptState.Completed;
         if (!await attempts.AnyAsync()) return false;
-        // The deadline is part of the SQL UPDATE predicate, within the same transaction
-        // as the assignment transition. A prior sweep is not the authority for purchasing.
         now = Now;
-        if (await db.RefillRequests.Where(r => r.Id == requestId && r.State == request.State &&
-                (action != "purchase" || attempts.Any(a => a.ReservationExpiresAt > now)))
+        if (await db.RefillRequests.Where(r => r.Id == requestId && r.State == request.State)
             .ExecuteUpdateAsync(s => s.SetProperty(r => r.State, next)
                 .SetProperty(r => r.CompletedAt, next == RefillState.Completed ? (long?)now : null)
                 .SetProperty(r => r.Outcome, next == RefillState.Completed ? action : null)) != 1) return false;
         await attempts.ExecuteUpdateAsync(s => s.SetProperty(a => a.State, attemptNext)
-            .SetProperty(a => a.PurchasingAt, a => action == "purchase" ? (long?)now : a.PurchasingAt)
-            .SetProperty(a => a.EndedAt, action == "purchase" ? null : (long?)now));
+            .SetProperty(a => a.EndedAt, now));
         await tx.CommitAsync();
         return true;
     }

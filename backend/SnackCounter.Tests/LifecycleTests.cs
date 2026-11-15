@@ -62,7 +62,7 @@ public class LifecycleTests : IDisposable
     {
         var id = await Setup();
         Assert.True(await Run(s => s.Accept(id, 1)));
-        Assert.True(await Run(s => s.Transition(id, 1, "purchase")));
+        Assert.True(await Run(s => s.Transition(id, 1, "purchase", 100, "NOK")));
         clock.Advance(TimeSpan.FromMinutes(16));
         Assert.False(await Run(s => s.Accept(id, 2)));
         Assert.Equal(RefillState.Purchasing, await State(id));
@@ -71,7 +71,7 @@ public class LifecycleTests : IDisposable
         Assert.Equal(RefillState.NeedsReview, await State(id));
         Assert.Empty(await Run(s => s.Invite(id)));
         Assert.False(await Run(s => s.Transition(id, 1, "release")));
-        Assert.True(await Run(s => s.Transition(id, 1, "complete")));
+        Assert.True(await Run(s => s.Transition(id, 1, "complete", 100, "NOK")));
     }
     [Fact]
     public async Task DeclineDoesNotChangeEligibilityOrCountAsContribution()
@@ -119,7 +119,7 @@ public class LifecycleTests : IDisposable
     {
         var id = await Setup();
         Assert.True(await Run(s => s.Accept(id, 1)));
-        Assert.False(await Run(s => s.Transition(id, 2, "purchase")));
+        Assert.False(await Run(s => s.Transition(id, 2, "purchase", 100, "NOK")));
         Assert.True(await Run(s => s.Transition(id, 1, "release")));
         Assert.True(await Run(s => s.Accept(id, 2)));
     }
@@ -161,7 +161,7 @@ public class LifecycleTests : IDisposable
         {
             if (++reads == 3) clock.Advance(TimeSpan.FromTicks(2 + offsetTicks));
         };
-        Assert.Equal(expected, await Run(s => s.Transition(id, 1, "purchase")));
+        Assert.Equal(expected, await Run(s => s.Transition(id, 1, "purchase", 100, "NOK")));
         clock.BeforeRead = null;
         await Run(async s => { await s.Sweep(); return true; });
         Assert.Equal(expected ? RefillState.Purchasing : RefillState.Open, await State(id));
@@ -182,7 +182,7 @@ public class LifecycleTests : IDisposable
         var purchase = Task.Run(async () =>
         {
             barrier.SignalAndWait(TimeSpan.FromSeconds(10));
-            return await Run(s => s.Transition(id, 1, "purchase"));
+            return await Run(s => s.Transition(id, 1, "purchase", 100, "NOK"));
         });
         var sweep = Task.Run(async () =>
         {

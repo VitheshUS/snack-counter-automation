@@ -12,6 +12,15 @@ var invitations = builder.Configuration.GetSection("Invitations").Get<Invitation
 if (invitations.NotificationCooldown <= TimeSpan.Zero || invitations.MaxInvitationAttempts < 1)
     throw new InvalidOperationException("Invitations requires a positive cooldown and maximum attempts.");
 builder.Services.AddSingleton(invitations);
+var budgets = builder.Configuration.GetSection("Budgets").Get<BudgetOptions>() ?? new();
+foreach (var policy in budgets.Offices.Values)
+{
+    if (policy.Currency is not ("NOK" or "INR") || policy.MonthlyLimitMinor <= 0 || policy.MonthlyLimitMinor > BudgetService.MaxMoneyMinor)
+        throw new InvalidOperationException("Invalid office budget policy.");
+    TimeZoneInfo.FindSystemTimeZoneById(policy.TimeZoneId);
+}
+builder.Services.AddSingleton(budgets);
+builder.Services.AddScoped<BudgetService>();
 builder.Services.AddScoped<RefillService>();
 builder.Services.AddHostedService<ExpirationWorker>();
 var app = builder.Build();
@@ -21,9 +30,11 @@ using (var scope = app.Services.CreateScope())
 // DEMO ONLY: employee IDs in bodies/URLs are trusted. No authentication or authorization.
 // Public request projections deliberately omit reporter and assignee identities.
 app.MapGet("/", () => new { application = "Snack Counter", warning = "Demo: identities are simulated and trusted; no authentication.",
-    endpoints = new[] { "GET /offices", "GET /demo/employees", "GET /refills", "POST /offices/{officeId}/refills",
+    endpoints = new[] { "GET /offices", "GET /offices/{officeId}/budget", "GET /demo/employees", "GET /refills", "POST /offices/{officeId}/refills",
         "POST /refills/{id}/invite", "GET /demo/employees/{employeeId}/invitations", "POST /refills/{id}/{action}" },
-    actions = new[] { "accept", "offer", "decline", "release", "unnecessary", "purchase", "complete" } });
+    actions = new[] { "accept", "offer", "decline", "release", "unnecessary", "purchase", "complete", "cancel-purchase" } });
+app.MapGet("/offices/{officeId:int}/budget", async (int officeId, BudgetService service) =>
+    await service.GetBalance(officeId) is { } balance ? Results.Ok(balance) : Results.NotFound());
 app.MapGet("/offices", async (SnackDb db) => await db.Offices.AsNoTracking().ToListAsync());
 app.MapGet("/demo/employees", async (SnackDb db) => await db.Employees.AsNoTracking().ToListAsync());
 app.MapGet("/refills", async (SnackDb db, RefillService service) =>
@@ -53,9 +64,18 @@ app.MapGet("/demo/employees/{employeeId:int}/invitations", async (int employeeId
     return await db.RefillAssignments.AsNoTracking().Where(a => a.EmployeeId == employeeId)
         .Select(a => new { a.RefillRequestId, a.State, a.InvitedAt, a.InvitationExpiresAt, a.ReservationExpiresAt }).ToListAsync();
 });
-app.MapPost("/refills/{id:int}/{action}", async (int id, string action, Identity body, RefillService service) =>
+app.MapPost("/refills/{id:int}/{action}", async (int id, string action, Identity body, RefillService service, BudgetService financial) =>
 {
-    if (action is not ("accept" or "offer" or "decline" or "release" or "unnecessary" or "purchase" or "complete"))
+    if (action is "purchase" or "complete" or "cancel-purchase")
+    {
+        var amount = action == "purchase" ? body.EstimatedAmountMinor : body.ActualAmountMinor;
+        if (amount == null || body.Currency == null) return Results.BadRequest(new { error = "Amount in minor units and currency are required." });
+        var result = action == "purchase"
+            ? await financial.Authorize(id, body.EmployeeId, amount.Value, body.Currency)
+            : await financial.Resolve(id, body.EmployeeId, amount.Value, body.Currency, action == "cancel-purchase");
+        return result.Success ? Results.Ok(result) : Results.Conflict(result);
+    }
+    if (action is not ("accept" or "offer" or "decline" or "release" or "unnecessary"))
         return Results.BadRequest(new { error = "Unknown action." });
     var ok = action switch
     {
@@ -68,7 +88,7 @@ app.MapPost("/refills/{id:int}/{action}", async (int id, string action, Identity
 });
 app.Run();
 
-public record Identity(int EmployeeId);
+public record Identity(int EmployeeId, long? EstimatedAmountMinor = null, long? ActualAmountMinor = null, string? Currency = null);
 public class ExpirationWorker(IServiceScopeFactory scopes, ILogger<ExpirationWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

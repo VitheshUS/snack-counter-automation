@@ -42,8 +42,15 @@ public class SnackDb(DbContextOptions<SnackDb> options) : DbContext(options)
     public DbSet<Employee> Employees => Set<Employee>();
     public DbSet<RefillRequest> RefillRequests => Set<RefillRequest>();
     public DbSet<RefillAssignment> RefillAssignments => Set<RefillAssignment>();
+    public DbSet<MonthlyBudget> MonthlyBudgets => Set<MonthlyBudget>();
+    public DbSet<PurchaseCommitment> PurchaseCommitments => Set<PurchaseCommitment>();
     protected override void OnModelCreating(ModelBuilder m)
     {
+        m.Entity<MonthlyBudget>().HasKey(b => new { b.OfficeId, b.Month });
+        m.Entity<MonthlyBudget>().HasOne<Office>().WithMany().HasForeignKey(b => b.OfficeId);
+        m.Entity<PurchaseCommitment>().HasOne<MonthlyBudget>().WithMany().HasForeignKey(p => new { p.OfficeId, p.Month });
+        m.Entity<PurchaseCommitment>().HasOne<RefillAssignment>().WithMany().HasForeignKey(p => p.RefillAssignmentId);
+        m.Entity<PurchaseCommitment>().HasIndex(p => p.RefillAssignmentId).IsUnique();
         m.Entity<Employee>().HasOne<Office>().WithMany().HasForeignKey(x => x.OfficeId);
         m.Entity<RefillRequest>().HasOne<Office>().WithMany().HasForeignKey(x => x.OfficeId);
         m.Entity<RefillRequest>().HasOne<Employee>().WithMany().HasForeignKey(x => x.ReportedById);
@@ -64,6 +71,20 @@ public class SnackDb(DbContextOptions<SnackDb> options) : DbContext(options)
         // Phase 1's only schema change: retain history, enforce uniqueness only for active attempts.
         // Upgrade the existing demo database without deleting its records.
         using var tx = await Database.BeginTransactionAsync();
+        await Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS MonthlyBudgets (
+                OfficeId INTEGER NOT NULL REFERENCES Offices(Id), Month TEXT NOT NULL,
+                Currency TEXT NOT NULL, LimitMinor INTEGER NOT NULL, PRIMARY KEY (OfficeId, Month));
+            CREATE TABLE IF NOT EXISTS PurchaseCommitments (
+                Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                RefillAssignmentId INTEGER NOT NULL REFERENCES RefillAssignments(Id),
+                OfficeId INTEGER NOT NULL, Month TEXT NOT NULL, EstimateMinor INTEGER NOT NULL,
+                ActualMinor INTEGER NULL, Cancelled INTEGER NOT NULL, RequiresHrReview INTEGER NOT NULL,
+                AuthorizedAt INTEGER NOT NULL, ResolvedAt INTEGER NULL,
+                FOREIGN KEY (OfficeId, Month) REFERENCES MonthlyBudgets(OfficeId, Month));
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_PurchaseCommitments_RefillAssignmentId ON PurchaseCommitments(RefillAssignmentId);
+            CREATE INDEX IF NOT EXISTS IX_PurchaseCommitments_OfficeId_Month ON PurchaseCommitments(OfficeId, Month);
+            """);
         await Database.ExecuteSqlRawAsync("DROP INDEX IF EXISTS IX_RefillAssignments_RefillRequestId_EmployeeId");
         await Database.ExecuteSqlRawAsync("CREATE UNIQUE INDEX IX_RefillAssignments_RefillRequestId_EmployeeId ON RefillAssignments (RefillRequestId, EmployeeId) WHERE State IN (0, 3, 6)");
         await tx.CommitAsync();
