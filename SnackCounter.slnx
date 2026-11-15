@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/backend/">
+    <Project Path="backend/SnackCounter.Api/SnackCounter.Api.csproj" />
+    <Project Path="backend/SnackCounter.Core/SnackCounter.Core.csproj" />
+    <Project Path="backend/SnackCounter.Tests/SnackCounter.Tests.csproj" />
+  </Folder>
+</Solution>
