@@ -8,6 +8,7 @@ All monetary amounts use integer minor units (100 per NOK/INR). All timestamps a
 | Method | Route | Body / query |
 | --- | --- | --- |
 | GET | `/demo/employees/{employeeId}/purchases` | Find the employee's purchase IDs |
+| GET | `/demo/employees/{employeeId}/reimbursements` | Read existing claims belonging to the employee's completed purchases |
 | POST | `/purchases/{purchaseId}/reimbursement` | `employeeId`, `description`, `receiptReference` |
 | GET | `/reimbursements/{id}?employeeId=2` | View local claim status |
 | POST | `/reimbursements/{id}/submit` | `employeeId`, optional `demoMode` |
@@ -15,6 +16,7 @@ All monetary amounts use integer minor units (100 per NOK/INR). All timestamps a
 | POST | `/demo/hr/reimbursements/{id}/decision` | `decision`: `Approved`, `Rejected`, or `Reimbursed` |
 
 The claimant, amount and currency come from the completed purchase and its original budget month.
+Claim discovery is read-only and returns an empty list when there are no eligible claims. It checks both claim and purchase ownership; employee IDs remain trusted demo inputs, not real authorization.
 Cancelled, unfinished, zero-expense and unnecessary-refill tasks cannot create a claim.
 Draft creation is idempotent: later calls return the original claim, including its original receipt reference and description.
 References are opaque private identifiers; the application does not fetch URLs, read local paths or accept file uploads.
