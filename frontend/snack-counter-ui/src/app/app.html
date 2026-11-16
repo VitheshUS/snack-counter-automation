@@ -1,0 +1,71 @@
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <a class="brand" routerLink="/dashboard"
+      ><span class="brand-mark" aria-hidden="true">s.</span
+      ><span>snack counter<small>A little care, shared.</small></span></a
+    >
+    <nav aria-label="Employee navigation">
+      <p class="nav-label">YOUR SPACE</p>
+      <a routerLink="/dashboard" routerLinkActive="active"
+        >Overview <span aria-hidden="true">↗</span></a
+      ><a routerLink="/volunteer" routerLinkActive="active">Volunteer</a
+      ><a routerLink="/expenses" routerLinkActive="active">Expenses & claims</a>
+    </nav>
+    <nav aria-label="HR demo navigation" class="hr-nav">
+      <p class="nav-label">SEPARATE DEMO AREA</p>
+      <a routerLink="/hr" routerLinkActive="active"
+        >HR workspace <span class="demo-label">DEMO</span></a
+      >
+    </nav>
+    <div class="sidebar-note">
+      <span class="small-dot"></span><strong>Always voluntary.</strong>
+      <p>Empty counters are okay. So is saying “not today.”</p>
+    </div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar">
+      <span class="workspace-title">Office essentials / Snack counter</span>
+      <div class="identity">
+        <label for="employee">Demo employee</label
+        ><select
+          id="employee"
+          [ngModel]="session.selected()"
+          (ngModelChange)="
+            session.selected.set(+$event); session.message.set(''); session.error.set('')
+          "
+          [disabled]="session.busy() || session.loading()"
+        >
+          @for (employee of session.employees(); track employee.id) {
+            <option [ngValue]="employee.id">
+              {{ employee.name }} · {{ officeName(employee.officeId) }}
+            </option>
+          }
+        </select>
+      </div>
+    </header>
+    <main id="main" tabindex="-1">
+      <div class="demo-banner">
+        Demo identities only · no authentication. Private views require real authorization in
+        production.
+      </div>
+      @if (session.error()) {
+        <div class="notice error" role="alert">
+          {{ session.error() }}
+          @if (!session.employees().length) {
+            <button (click)="session.load()">Retry connection</button>
+          }
+        </div>
+      }
+      @if (session.message()) {
+        <div class="notice success" role="status">{{ session.message() }}</div>
+      }
+      @if (session.loading()) {
+        <p role="status">Connecting to the office…</p>
+      } @else {
+        <router-outlet />
+      }
+    </main>
+    <footer>Made for shared spaces. Participation is always your choice.</footer>
+  </div>
+</div>

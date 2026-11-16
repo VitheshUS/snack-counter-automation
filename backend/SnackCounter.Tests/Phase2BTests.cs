@@ -40,6 +40,50 @@ public class Phase2BTests : IDisposable
         return await new ReportingService(db, clock, budgets, rates).Consolidated(month);
     }
     [Fact]
+    public async Task ClaimDiscoveryReturnsEmptyWithoutCreatingOrSubmittingClaims()
+    {
+        await Purchase();
+        Assert.Empty(await Claims(s => s.ForEmployee(2)));
+        Assert.Empty(await Claims(s => s.ForEmployee(999)));
+        await using var db = Db();
+        Assert.Empty(await db.ReimbursementClaims.ToArrayAsync());
+        Assert.Empty(await db.MockHrClaims.ToArrayAsync());
+    }
+    [Fact]
+    public async Task ClaimDiscoveryFiltersEmployeeAndPurchaseOwnership()
+    {
+        var oslo = await Purchase();
+        var bengaluru = await Purchase(2);
+        var osloClaim = await Draft(oslo.Purchase);
+        await Draft(bengaluru.Purchase, 5);
+        Assert.Equal(osloClaim.Id, Assert.Single(await Claims(s => s.ForEmployee(2))).Id);
+        Assert.Single(await Claims(s => s.ForEmployee(5)));
+        Assert.Empty(await Claims(s => s.ForEmployee(1))); // Reporter is not the claimant.
+        // Defense in depth: inconsistent ownership cannot expose another purchaser's receipt.
+        await using (var db = Db())
+            await db.ReimbursementClaims.Where(c => c.Id == osloClaim.Id)
+                .ExecuteUpdateAsync(s => s.SetProperty(c => c.EmployeeId, 3));
+        Assert.Empty(await Claims(s => s.ForEmployee(2)));
+        Assert.Empty(await Claims(s => s.ForEmployee(3)));
+    }
+    [Fact]
+    public async Task ClaimDiscoveryPreservesStatusReceiptAndIdempotencyAcrossReads()
+    {
+        var purchase = await Purchase();
+        var draft = await Draft(purchase.Purchase);
+        await Claims(s => s.Submit(draft.Id, 2));
+        var first = Assert.Single(await Claims(s => s.ForEmployee(2)));
+        var second = Assert.Single(await Claims(s => s.ForEmployee(2)));
+        Assert.Equal(ClaimState.PendingHR, first.State);
+        Assert.Equal("private-receipt:demo-123", first.ReceiptReference);
+        Assert.Equal(draft.IdempotencyKey, first.IdempotencyKey);
+        Assert.Equal(first.UpdatedAt, second.UpdatedAt);
+        await using var db = Db();
+        Assert.Equal(1, await db.ReimbursementClaims.CountAsync());
+        Assert.Equal(1, await db.MockHrClaims.CountAsync());
+        Assert.Equal(10000, (await db.PurchaseCommitments.SingleAsync()).ActualMinor);
+    }
+    [Fact]
     public async Task SuccessfulSubmissionContainsAuthoritativeEmployeeActualCurrencyAndReceipt()
     {
         var purchase = await Purchase(2, 12000);

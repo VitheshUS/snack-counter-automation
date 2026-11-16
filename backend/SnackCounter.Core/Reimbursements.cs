@@ -71,6 +71,13 @@ public class SimulatedHr(SnackDb db, TimeProvider clock) : IHrAdapter
 }
 public class ReimbursementService(SnackDb db, TimeProvider clock, IHrAdapter hr)
 {
+    // Demo identity filtering only, not authentication. Read-only discovery must
+    // neither create drafts nor call HR. Check both claim and purchase ownership.
+    public Task<List<ReimbursementClaim>> ForEmployee(int employeeId) => db.ReimbursementClaims.AsNoTracking()
+        .Where(c => c.EmployeeId == employeeId && db.PurchaseCommitments.Any(p =>
+            p.Id == c.PurchaseCommitmentId && !p.Cancelled && p.ActualMinor > 0 &&
+            db.RefillAssignments.Any(a => a.Id == p.RefillAssignmentId && a.EmployeeId == employeeId && a.State == AttemptState.Completed)))
+        .OrderByDescending(c => c.Id).ToListAsync();
     public Task<ReimbursementClaim?> Get(int id, int employeeId) => db.ReimbursementClaims.AsNoTracking()
         .SingleOrDefaultAsync(c => c.Id == id && c.EmployeeId == employeeId);
     public async Task<ReimbursementClaim?> Draft(int purchaseId, int employeeId, string description, string receipt)

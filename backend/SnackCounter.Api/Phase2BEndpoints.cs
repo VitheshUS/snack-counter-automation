@@ -7,6 +7,8 @@ public static class Phase2BEndpoints
     {
         // DEMO ONLY: supplied identities are trusted. Production must authorize employee
         // claim access and restrict /demo/hr operations, contribution data and receipts to HR.
+        app.MapGet("/demo/employees/{employeeId:int}/reimbursements", async (int employeeId, ReimbursementService service) =>
+            Results.Ok(await service.ForEmployee(employeeId)));
         app.MapPost("/purchases/{purchaseId:int}/reimbursement", async (int purchaseId, ClaimDraft body, ReimbursementService service) =>
         {
             try

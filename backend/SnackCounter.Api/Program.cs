@@ -3,6 +3,10 @@ using Microsoft.EntityFrameworkCore;
 using SnackCounter.Core;
 
 var builder = WebApplication.CreateBuilder(args);
+// This interactive demo runs without Windows Event Log write privileges.
+// A logging-provider failure must not turn an expected uniqueness conflict into an aborted request.
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddDbContext<SnackDb>(o => o.UseSqlite(builder.Configuration.GetConnectionString("SnackCounter")
     ?? "Data Source=snackcounter.db;Default Timeout=30"));
@@ -40,7 +44,7 @@ using (var scope = app.Services.CreateScope())
 app.MapGet("/", () => new { application = "Snack Counter", warning = "Demo: identities are simulated and trusted; no authentication.",
     endpoints = new[] { "GET /offices", "GET /offices/{officeId}/budget", "GET /demo/employees", "GET /refills", "POST /offices/{officeId}/refills",
         "POST /refills/{id}/invite", "GET /demo/employees/{employeeId}/invitations", "POST /refills/{id}/{action}",
-        "GET /demo/employees/{employeeId}/purchases", "POST /purchases/{purchaseId}/reimbursement",
+        "GET /demo/employees/{employeeId}/purchases", "GET /demo/employees/{employeeId}/reimbursements", "POST /purchases/{purchaseId}/reimbursement",
         "GET /reimbursements/{id}?employeeId=...", "POST /reimbursements/{id}/submit", "POST /reimbursements/{id}/reconcile",
         "POST /demo/hr/reimbursements/{id}/decision", "GET /reports/monthly/{month}", "GET /reports/monthly/{month}/consolidated",
         "GET /demo/hr/contributions", "GET /demo/hr/contributions/leaderboard" },

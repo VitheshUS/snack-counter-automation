@@ -44,3 +44,28 @@ jobs:
 
       - name: Run xUnit tests
         run: dotnet test SnackCounter.slnx --configuration Release --no-build --no-restore
+
+  frontend:
+    name: Frontend build and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend/snack-counter-ui
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/snack-counter-ui/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Build production frontend
+        run: npm run build
+      - name: Run frontend tests
+        run: npm test -- --watch=false
